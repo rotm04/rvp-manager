@@ -1,0 +1,155 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Třída / Skupina
+model Class {
+  id        String   @id @default(uuid())
+  name      String   // např. "9.A", "8.B - Skupina 1"
+  grade     Int      // Ročník (kategorie), např. 8, 9 (pro párování s RVP)
+  color     String   @default("#4f46e5") // Barva třídy v hexadecimálním formátu
+  createdAt DateTime @default(now())
+  
+  students  Student[] // N:M s žáky
+  lessons   Lesson[]
+  tasks     Task[]
+}
+
+// 2. Žák (Globální databáze žáků, žák může navštěvovat více tříd/skupin)
+model Student {
+  id          String   @id @default(uuid())
+  firstName   String
+  lastName    String
+  createdAt   DateTime @default(now())
+  
+  classes     Class[]  // N:M s třídami
+  assignments StudentAssignment[]
+}
+
+// 3. Tematický plán (hlavička pro daný ročník)
+model CurriculumPlan {
+  id          String   @id @default(uuid())
+  grade       Int      // Ročník, pro který plán je
+  name        String   // Název plánu, např. "Informatika 9 - Základy kódování"
+  description String?
+  createdAt   DateTime @default(now())
+  
+  items       CurriculumPlanItem[]
+}
+
+// 4. Položka tematického plánu (konkrétní téma s kódy RVP)
+model CurriculumPlanItem {
+  id             String               @id @default(uuid())
+  planId         String
+  plan           CurriculumPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  topic          String               // Název tématu
+  description    String               // Popis tématu
+  pocetHodin     Int                  @default(1) // Časová dotace tématu v hodinách
+  order          Int                  // Pořadí pro řazení témat
+  
+  // N:M vazby na číselníky RVP
+  ovuItems       OcekavanyVystup[]
+  gItems         Gramotnost[]
+  kkItems        KlicovaKompetence[]
+  ptItems        PrurezoveTema[]
+}
+
+// ČÍSELNÍKY RVP (Many-to-Many s tématy)
+
+model OcekavanyVystup {
+  id             String               @id @default(uuid())
+  code           String               @unique
+  description    String
+  grade          Int?                 // Volitelný ročník (pro filtrování při výběru tématu)
+  items          CurriculumPlanItem[]
+}
+
+model Gramotnost {
+  id             String               @id @default(uuid())
+  code           String               @unique
+  description    String
+  items          CurriculumPlanItem[]
+}
+
+model KlicovaKompetence {
+  id             String               @id @default(uuid())
+  code           String               @unique
+  description    String
+  items          CurriculumPlanItem[]
+}
+
+model PrurezoveTema {
+  id             String               @id @default(uuid())
+  code           String               @unique
+  description    String
+  items          CurriculumPlanItem[]
+}
+
+// 5. Výuková hodina (Kalendářní událost)
+model Lesson {
+  id             String   @id @default(uuid())
+  classId        String
+  class          Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  date           DateTime // Datum a čas zahájení konání hodiny
+  delkaTrvani    Int      @default(45) // Délka v minutách (výchozí 45)
+  konec          DateTime // Datum a čas konce konání hodiny (pro kalendářní zobrazení)
+  status         String   // "scheduled" (naplánováno), "completed" (proběhlo), "cancelled" (zrušeno)
+  
+  // Kopírované hodnoty z RVP (sloučené textově), které lze pro konkrétní hodinu ručně přepsat:
+  topic          String
+  description    String
+  ovuCode        String
+  ovuDescription String
+  gCode          String
+  gDescription   String
+  kkCode         String
+  kkDescription  String
+  ptCode         String
+  ptDescription  String
+  
+  createdAt      DateTime @default(now())
+}
+
+// 6. Úkol
+model Task {
+  id              String   @id @default(uuid())
+  classId         String
+  class           Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  title           String
+  description     String
+  maxPoints       Int?     // Hodnocení body (pokud je nastaveno)
+  maxGrade        String?  // Hodnocení známkou (např. "1-5")
+  filePlaceholder String?  // Odkaz na podklady / Název očekávaného souboru
+  datumZadani     DateTime @default(now()) // Datum zadání úkolu
+  dueDate         DateTime? // Datum odevzdání (deadline)
+  createdAt       DateTime @default(now())
+  
+  studentAssignments StudentAssignment[]
+}
+
+// 7. Hodnocení konkrétního žáka za úkol
+model StudentAssignment {
+  id          String   @id @default(uuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  
+  submitted   Boolean  @default(false) // Stav odevzdání (true = Odevzdáno)
+  points      Int?     // Získané body (pokud je úkol bodován)
+  grade       String?  // Získaná známka (pokud je úkol známkován)
+  feedback    String?  // Textové slovní hodnocení / poznámka učitele
+  
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@unique([studentId, taskId])
+}
